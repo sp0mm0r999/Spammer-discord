@@ -177,7 +177,7 @@ function getNextProxy() {
 }
 
 const CONFIG = {
-    TOKEN: process.env.TOKEN || 'MTQzNzE5Mzg5NzA3NTAxOTg2Nw.GFErnD.hKkobs-B3c6hIm4EQU_fXajnTQLbB1PceLc9FE', // RENDER: env var גובר
+    TOKEN: process.env.TOKEN || 'MTU2MjYxMzIyODk4MTQ2MTA5Mg.G85k2l.euQZfH9bg-PiqwAAISK-vblaEvixleI917Mhe8', // RENDER: env var גובר
     GUILD_ID: '1518672658244571367',
     PANEL_CHANNEL_ID: '1519149811247611964',
     FREE_CREDITS_CHANNEL_ID: '1519483011010134026',
