@@ -177,7 +177,7 @@ function getNextProxy() {
 }
 
 const CONFIG = {
-    TOKEN: process.env.TOKEN || 'MTU2MjYxMzIyODk4MTQ2MTA5Mg.G85k2l.euQZfH9bg-PiqwAAISK-vblaEvixleI917Mhe8', // RENDER: env var גובר
+    TOKEN: process.env.TOKEN || 'MTU2MjYxMzIyODk4MTQ2MTA5Mg.G85k2l.euQZfH9bg-PiqwAAISK-vblaEvixleI917Mhe8',
     GUILD_ID: '1518672658244571367',
     PANEL_CHANNEL_ID: '1519149811247611964',
     FREE_CREDITS_CHANNEL_ID: '1519483011010134026',
@@ -208,7 +208,7 @@ const INVITE_REWARD_TIERS = [
     { invites: 10, credits: 35 },
 ];
 
-const http = require('http'); // RENDER
+const http = require('http');
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, SlashCommandBuilder, Events } = require('discord.js');
 const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
@@ -222,13 +222,59 @@ let db = {
     settings: {},
     invites_claimed: {},
     casino_stats: {},
-    invite_milestones_claimed: {}, // { userId: [2, 5] } - שלבים שכבר נטענו
+    invite_milestones_claimed: {},
 };
 
 // Store only invite code and uses count, NOT the full invite objects
 const guildInvites = new Map();
 const activeGames = new Map();
 const gameTimeouts = new Map();
+
+// ===== GITHUB DB SYNC =====
+const GH_TOKEN  = process.env.GH_TOKEN  || '';
+const GH_REPO   = process.env.GH_REPO   || 'sp0mm0r999/Spammer-discord';
+const GH_BRANCH = process.env.GH_BRANCH || 'main';
+const GH_PATH   = 'db.json';
+const GH_API    = 'https://api.github.com/repos/' + GH_REPO + '/contents/' + GH_PATH;
+const GH_HEADERS = () => ({ Authorization: 'Bearer ' + GH_TOKEN, 'User-Agent': 'spam-bot', Accept: 'application/vnd.github+json' });
+let dbDirty = false;
+
+async function ghRestoreDb() {
+    if (!GH_TOKEN) { console.log('[GH] no GH_TOKEN, skipping restore'); return; }
+    try {
+        const r = await axios.get(GH_API, { headers: GH_HEADERS(), params: { ref: GH_BRANCH }, timeout: 15000 });
+        const content = Buffer.from(r.data.content, 'base64').toString('utf8');
+        JSON.parse(content);
+        fs.writeFileSync(DB_FILE, content, 'utf8');
+        console.log('[GH] db.json restored from GitHub');
+    } catch (e) {
+        console.log('[GH] restore skipped:', e.response ? e.response.status : e.message);
+    }
+}
+
+async function ghPushDb() {
+    if (!GH_TOKEN || !dbDirty) return;
+    try {
+        let sha = null;
+        try {
+            const cur = await axios.get(GH_API, { headers: GH_HEADERS(), params: { ref: GH_BRANCH }, timeout: 15000 });
+            sha = cur.data.sha;
+        } catch (e) { /* הקובץ עוד לא קיים */ }
+
+        const content = fs.readFileSync(DB_FILE, 'utf8');
+        await axios.put(GH_API, {
+            message: 'db sync ' + new Date().toISOString() + ' [skip ci]',
+            content: Buffer.from(content, 'utf8').toString('base64'),
+            branch: GH_BRANCH,
+            ...(sha ? { sha } : {}),
+        }, { headers: GH_HEADERS(), timeout: 20000 });
+
+        dbDirty = false;
+        console.log('[GH] db.json pushed to GitHub');
+    } catch (e) {
+        console.log('[GH] push failed:', e.response ? e.response.status : e.message);
+    }
+}
 
 function loadDb() {
     try {
@@ -257,6 +303,7 @@ function loadDb() {
 function saveDb() {
     try {
         fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
+        dbDirty = true;
         updateLeaderboardMessage().catch(() => {});
     } catch (err) {
         console.error('Failed to save database:', err);
@@ -268,16 +315,16 @@ async function fetchAndStoreInvites(guild) {
     try {
         const invites = await guild.invites.fetch().catch(() => null);
         if (!invites) return null;
-        
+
         // Store only what we need: { code, uses, inviterId }
         const inviteMap = new Map();
         invites.forEach(inv => {
-            inviteMap.set(inv.code, { 
-                uses: inv.uses, 
+            inviteMap.set(inv.code, {
+                uses: inv.uses,
                 inviterId: inv.inviter?.id || null
             });
         });
-        
+
         guildInvites.set(guild.id, inviteMap);
         return inviteMap;
     } catch (err) {
@@ -537,8 +584,6 @@ async function updateLeaderboardMessage() {
     }
 }
 
-
-
 async function fire(method, url, opts = {}) {
     try {
         const proxy = getNextProxy();
@@ -577,7 +622,7 @@ async function fire(method, url, opts = {}) {
         if (opts.referer) {
             config.headers['Referer'] = opts.referer;
         }
-        
+
         console.log(`[FIRE] Sending request to ${url} with proxy ${proxy}`);
         const response = await axios(config);
         console.log(`[FIRE] Success for ${url} - Status: ${response.status}`);
@@ -1099,7 +1144,7 @@ client.on(Events.GuildMemberAdd, async member => {
 
         console.log('[GuildMemberAdd] Cached invites found: ' + (cachedInvites ? cachedInvites.size : 0));
         console.log('[GuildMemberAdd] New invites fetched: ' + newInviteData.size);
-        
+
         let usedInviteCode = null;
         let inviterId = null;
 
@@ -1265,11 +1310,11 @@ client.on(Events.InteractionCreate, async interaction => {
                 await interaction.deferReply({ ephemeral: true });
 
                 console.log('[Invite Rewards] User ' + user.id + ' clicked claim button!');
-                
+
                 const userData = getOrCreateUser(user.id);
                 const totalInvites = userData.total_invites || 0;
                 const claimedMilestones = getClaimedMilestones(user.id);
-                
+
                 console.log('[Invite Rewards] - Total invites: ' + totalInvites);
                 console.log('[Invite Rewards] - Claimed milestones: ' + claimedMilestones.join(', ') || 'none');
                 console.log('[Invite Rewards] - Checking tiers: ' + JSON.stringify(INVITE_REWARD_TIERS));
@@ -2137,11 +2182,20 @@ process.on('uncaughtException', (error) => {
 });
 
 // ===== RENDER KEEP-ALIVE =====
-// שרת HTTP קטן כדי ש-Render לא ירדם (UptimeRobot יפינג אותו כל 10 דק')
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('alive');
 }).listen(PORT, () => console.log('HTTP keep-alive listening on port ' + PORT));
 
-client.login(CONFIG.TOKEN);
+// ===== DB SYNC: דחיפה אחרונה לפני כיבוי =====
+process.on('SIGTERM', async () => { await ghPushDb(); process.exit(0); });
+process.on('SIGINT',  async () => { await ghPushDb(); process.exit(0); });
+
+// ===== BOOT =====
+(async () => {
+    await ghRestoreDb();
+    loadDb();
+    setInterval(ghPushDb, 3 * 60 * 1000);
+    await client.login(CONFIG.TOKEN);
+})();
